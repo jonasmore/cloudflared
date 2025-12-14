@@ -725,6 +725,7 @@ func buildRunCommand() *cli.Command {
 		maxActiveFlowsFlag,
 		dnsResolverAddrsFlag,
 	}
+	flags = append(flags, configureCloudflaredFlags(false)...)
 	flags = append(flags, configureProxyFlags(false)...)
 	return &cli.Command{
 		Name:      "run",

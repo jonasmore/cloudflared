@@ -155,6 +155,12 @@ const (
 	// MetricsUpdateFreq is the command line flag to define how frequently tunnel metrics are updated
 	MetricsUpdateFreq = "metrics-update-freq"
 
+	// MetricsFile is the command line flag to define the path for JSONL metrics export
+	MetricsFile = "metricsfile"
+
+	// MetricsInterval is the command line flag to define how frequently metrics are exported to file
+	MetricsInterval = "metricsinterval"
+
 	// ApiURL is the command line flag used to define the base URL of the API
 	ApiURL = "api-url"
 

@@ -132,6 +132,8 @@ var (
 		cfdflags.LBPool,
 		cfdflags.ApiURL,
 		cfdflags.MetricsUpdateFreq,
+		cfdflags.MetricsFile,
+		cfdflags.MetricsInterval,
 		cfdflags.Tag,
 		"heartbeat-interval",
 		"heartbeat-count",
@@ -530,6 +532,26 @@ func StartServer(
 		}
 		errC <- metrics.ServeMetrics(metricsListener, ctx, metricsConfig, log)
 	}()
+
+	// Start JSONL metrics exporter if configured
+	if metricsFile := c.String(cfdflags.MetricsFile); metricsFile != "" {
+		metricsInterval := c.Duration(cfdflags.MetricsInterval)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			exporter, err := metrics.NewJSONLExporter(metricsFile, metricsInterval, log)
+			if err != nil {
+				log.Err(err).Msg("Failed to create JSONL metrics exporter")
+				errC <- err
+				return
+			}
+			errC <- exporter.Run(ctx)
+		}()
+		log.Info().
+			Str("file", metricsFile).
+			Dur("interval", metricsInterval).
+			Msg("JSONL metrics export enabled")
+	}
 
 	reconnectCh := make(chan supervisor.ReconnectSignal, c.Int(cfdflags.HaConnections))
 	if c.IsSet("stdin-control") {
@@ -938,6 +960,19 @@ and virtualized host network stacks from each other`,
 			Name:    "pidfile",
 			Usage:   "Write the application's PID to this file after first successful connection.",
 			EnvVars: []string{"TUNNEL_PIDFILE"},
+			Hidden:  shouldHide,
+		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:    cfdflags.MetricsFile,
+			Usage:   "Path to file for exporting metrics in JSONL format. Metrics are appended periodically.",
+			EnvVars: []string{"TUNNEL_METRICS_FILE"},
+			Hidden:  shouldHide,
+		}),
+		altsrc.NewDurationFlag(&cli.DurationFlag{
+			Name:    cfdflags.MetricsInterval,
+			Usage:   "Frequency to export metrics to file",
+			Value:   time.Second * 60,
+			EnvVars: []string{"TUNNEL_METRICS_INTERVAL"},
 			Hidden:  shouldHide,
 		}),
 	}
