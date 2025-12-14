@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,6 +23,9 @@ type JSONLExporter struct {
 	gatherer       prometheus.Gatherer
 	log            *zerolog.Logger
 	filterPatterns []string
+	compress       bool
+	lastValues     map[string]float64
+	lastValuesMu   sync.RWMutex
 }
 
 // MetricSample represents a single metric sample in JSONL format
@@ -34,7 +38,7 @@ type MetricSample struct {
 }
 
 // NewJSONLExporter creates a new JSONL metrics exporter
-func NewJSONLExporter(filePath string, interval time.Duration, filterPatterns []string, log *zerolog.Logger) (*JSONLExporter, error) {
+func NewJSONLExporter(filePath string, interval time.Duration, filterPatterns []string, compress bool, log *zerolog.Logger) (*JSONLExporter, error) {
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -47,6 +51,8 @@ func NewJSONLExporter(filePath string, interval time.Duration, filterPatterns []
 		gatherer:       prometheus.DefaultGatherer,
 		log:            log,
 		filterPatterns: filterPatterns,
+		compress:       compress,
+		lastValues:     make(map[string]float64),
 	}, nil
 }
 
@@ -189,6 +195,14 @@ func (e *JSONLExporter) writeMetricFamily(encoder *json.Encoder, mf *dto.MetricF
 
 // writeSample writes a single metric sample to the JSONL file
 func (e *JSONLExporter) writeSample(encoder *json.Encoder, timestamp, name, metricType string, value float64, labels map[string]string) error {
+	// Check if compression is enabled and value hasn't changed
+	if e.compress {
+		key := e.buildMetricKey(name, labels)
+		if !e.shouldWriteMetric(key, value) {
+			return nil // Skip writing unchanged metric
+		}
+	}
+
 	sample := MetricSample{
 		Timestamp: timestamp,
 		Name:      name,
@@ -229,6 +243,51 @@ func (e *JSONLExporter) matchesFilter(metricName string) bool {
 			return true
 		}
 	}
+	return false
+}
+
+// buildMetricKey creates a unique key for a metric based on name and labels
+func (e *JSONLExporter) buildMetricKey(name string, labels map[string]string) string {
+	if len(labels) == 0 {
+		return name
+	}
+
+	// Create a stable hash of labels
+	// Sort keys to ensure consistent ordering
+	var labelPairs []string
+	for k, v := range labels {
+		labelPairs = append(labelPairs, k+"="+v)
+	}
+	// Simple concatenation is sufficient since we control the format
+	// and metric names/labels don't contain special characters
+	labelStr := strings.Join(labelPairs, ",")
+	return name + "{" + labelStr + "}"
+}
+
+// shouldWriteMetric checks if a metric value has changed and should be written
+// Returns true if the metric should be written, false if it should be skipped
+func (e *JSONLExporter) shouldWriteMetric(key string, value float64) bool {
+	e.lastValuesMu.RLock()
+	lastValue, exists := e.lastValues[key]
+	e.lastValuesMu.RUnlock()
+
+	// Always write if this is the first time we see this metric
+	if !exists {
+		e.lastValuesMu.Lock()
+		e.lastValues[key] = value
+		e.lastValuesMu.Unlock()
+		return true
+	}
+
+	// Check if value has changed
+	if value != lastValue {
+		e.lastValuesMu.Lock()
+		e.lastValues[key] = value
+		e.lastValuesMu.Unlock()
+		return true
+	}
+
+	// Value unchanged, skip writing
 	return false
 }
 

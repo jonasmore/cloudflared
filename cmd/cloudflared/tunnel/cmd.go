@@ -135,6 +135,7 @@ var (
 		cfdflags.MetricsFile,
 		cfdflags.MetricsInterval,
 		cfdflags.MetricsFilter,
+		cfdflags.MetricsCompress,
 		cfdflags.Tag,
 		"heartbeat-interval",
 		"heartbeat-count",
@@ -537,6 +538,7 @@ func StartServer(
 	// Start JSONL metrics exporter if configured
 	if metricsFile := c.String(cfdflags.MetricsFile); metricsFile != "" {
 		metricsInterval := c.Duration(cfdflags.MetricsInterval)
+		metricsCompress := c.Bool(cfdflags.MetricsCompress)
 
 		// Parse filter patterns from comma-separated string
 		var filterPatterns []string
@@ -552,7 +554,7 @@ func StartServer(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			exporter, err := metrics.NewJSONLExporter(metricsFile, metricsInterval, filterPatterns, log)
+			exporter, err := metrics.NewJSONLExporter(metricsFile, metricsInterval, filterPatterns, metricsCompress, log)
 			if err != nil {
 				log.Err(err).Msg("Failed to create JSONL metrics exporter")
 				errC <- err
@@ -563,7 +565,8 @@ func StartServer(
 
 		logEvent := log.Info().
 			Str("file", metricsFile).
-			Dur("interval", metricsInterval)
+			Dur("interval", metricsInterval).
+			Bool("compress", metricsCompress)
 		if len(filterPatterns) > 0 {
 			logEvent.Strs("filters", filterPatterns)
 		}
@@ -996,6 +999,12 @@ and virtualized host network stacks from each other`,
 			Name:    cfdflags.MetricsFilter,
 			Usage:   "Comma-separated list of metric name patterns to export. Supports wildcards (*). If not set, all metrics are exported. Example: 'quic_client_*,cloudflared_tunnel_*'",
 			EnvVars: []string{"TUNNEL_METRICS_FILTER"},
+			Hidden:  shouldHide,
+		}),
+		altsrc.NewBoolFlag(&cli.BoolFlag{
+			Name:    cfdflags.MetricsCompress,
+			Usage:   "Enable change-only export mode. Only writes metrics when their value changes, significantly reducing file size. Recommended for production with long retention periods.",
+			EnvVars: []string{"TUNNEL_METRICS_COMPRESS"},
 			Hidden:  shouldHide,
 		}),
 	}

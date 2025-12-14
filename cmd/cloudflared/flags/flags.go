@@ -164,6 +164,9 @@ const (
 	// MetricsFilter is the command line flag to filter which metrics are exported to file
 	MetricsFilter = "metricsfilter"
 
+	// MetricsCompress is the command line flag to enable change-only metric export
+	MetricsCompress = "metricscompress"
+
 	// ApiURL is the command line flag used to define the base URL of the API
 	ApiURL = "api-url"
 
