@@ -134,6 +134,7 @@ var (
 		cfdflags.MetricsUpdateFreq,
 		cfdflags.MetricsFile,
 		cfdflags.MetricsInterval,
+		cfdflags.MetricsFilter,
 		cfdflags.Tag,
 		"heartbeat-interval",
 		"heartbeat-count",
@@ -536,10 +537,22 @@ func StartServer(
 	// Start JSONL metrics exporter if configured
 	if metricsFile := c.String(cfdflags.MetricsFile); metricsFile != "" {
 		metricsInterval := c.Duration(cfdflags.MetricsInterval)
+
+		// Parse filter patterns from comma-separated string
+		var filterPatterns []string
+		if filterStr := c.String(cfdflags.MetricsFilter); filterStr != "" {
+			for _, pattern := range strings.Split(filterStr, ",") {
+				pattern = strings.TrimSpace(pattern)
+				if pattern != "" {
+					filterPatterns = append(filterPatterns, pattern)
+				}
+			}
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			exporter, err := metrics.NewJSONLExporter(metricsFile, metricsInterval, log)
+			exporter, err := metrics.NewJSONLExporter(metricsFile, metricsInterval, filterPatterns, log)
 			if err != nil {
 				log.Err(err).Msg("Failed to create JSONL metrics exporter")
 				errC <- err
@@ -547,10 +560,14 @@ func StartServer(
 			}
 			errC <- exporter.Run(ctx)
 		}()
-		log.Info().
+
+		logEvent := log.Info().
 			Str("file", metricsFile).
-			Dur("interval", metricsInterval).
-			Msg("JSONL metrics export enabled")
+			Dur("interval", metricsInterval)
+		if len(filterPatterns) > 0 {
+			logEvent.Strs("filters", filterPatterns)
+		}
+		logEvent.Msg("JSONL metrics export enabled")
 	}
 
 	reconnectCh := make(chan supervisor.ReconnectSignal, c.Int(cfdflags.HaConnections))
@@ -973,6 +990,12 @@ and virtualized host network stacks from each other`,
 			Usage:   "Frequency to export metrics to file",
 			Value:   time.Second * 60,
 			EnvVars: []string{"TUNNEL_METRICS_INTERVAL"},
+			Hidden:  shouldHide,
+		}),
+		altsrc.NewStringFlag(&cli.StringFlag{
+			Name:    cfdflags.MetricsFilter,
+			Usage:   "Comma-separated list of metric name patterns to export. Supports wildcards (*). If not set, all metrics are exported. Example: 'quic_client_*,cloudflared_tunnel_*'",
+			EnvVars: []string{"TUNNEL_METRICS_FILTER"},
 			Hidden:  shouldHide,
 		}),
 	}

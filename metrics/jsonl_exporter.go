@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,10 +17,11 @@ import (
 
 // JSONLExporter exports Prometheus metrics to a JSONL (JSON Lines) file periodically
 type JSONLExporter struct {
-	filePath string
-	interval time.Duration
-	gatherer prometheus.Gatherer
-	log      *zerolog.Logger
+	filePath       string
+	interval       time.Duration
+	gatherer       prometheus.Gatherer
+	log            *zerolog.Logger
+	filterPatterns []string
 }
 
 // MetricSample represents a single metric sample in JSONL format
@@ -32,7 +34,7 @@ type MetricSample struct {
 }
 
 // NewJSONLExporter creates a new JSONL metrics exporter
-func NewJSONLExporter(filePath string, interval time.Duration, log *zerolog.Logger) (*JSONLExporter, error) {
+func NewJSONLExporter(filePath string, interval time.Duration, filterPatterns []string, log *zerolog.Logger) (*JSONLExporter, error) {
 	// Ensure parent directory exists
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -40,10 +42,11 @@ func NewJSONLExporter(filePath string, interval time.Duration, log *zerolog.Logg
 	}
 
 	return &JSONLExporter{
-		filePath: filePath,
-		interval: interval,
-		gatherer: prometheus.DefaultGatherer,
-		log:      log,
+		filePath:       filePath,
+		interval:       interval,
+		gatherer:       prometheus.DefaultGatherer,
+		log:            log,
+		filterPatterns: filterPatterns,
 	}, nil
 }
 
@@ -111,6 +114,12 @@ func (e *JSONLExporter) exportMetrics() error {
 // writeMetricFamily writes all metrics in a metric family to the JSONL file
 func (e *JSONLExporter) writeMetricFamily(encoder *json.Encoder, mf *dto.MetricFamily, timestamp string) error {
 	metricName := mf.GetName()
+
+	// Apply filter if patterns are specified
+	if len(e.filterPatterns) > 0 && !e.matchesFilter(metricName) {
+		return nil // Skip this metric
+	}
+
 	metricType := mf.GetType().String()
 
 	for _, m := range mf.GetMetric() {
@@ -211,6 +220,66 @@ func (e *JSONLExporter) copyLabels(labels map[string]string) map[string]string {
 		copy[k] = v
 	}
 	return copy
+}
+
+// matchesFilter checks if a metric name matches any of the filter patterns
+func (e *JSONLExporter) matchesFilter(metricName string) bool {
+	for _, pattern := range e.filterPatterns {
+		if matchWildcard(pattern, metricName) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchWildcard performs simple wildcard matching (* matches any sequence of characters)
+func matchWildcard(pattern, str string) bool {
+	// Handle exact match
+	if pattern == str {
+		return true
+	}
+
+	// Handle wildcard patterns
+	if !strings.Contains(pattern, "*") {
+		return pattern == str
+	}
+
+	// Split pattern by * and check if all parts exist in order
+	parts := strings.Split(pattern, "*")
+
+	// Pattern starts with *
+	if len(parts) > 0 && parts[0] == "" {
+		parts = parts[1:]
+	}
+
+	// Pattern ends with *
+	endsWithWildcard := pattern[len(pattern)-1] == '*'
+
+	idx := 0
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		pos := strings.Index(str[idx:], part)
+		if pos == -1 {
+			return false
+		}
+
+		// First part must match at the beginning (unless pattern starts with *)
+		if i == 0 && pattern[0] != '*' && pos != 0 {
+			return false
+		}
+
+		idx += pos + len(part)
+	}
+
+	// If pattern doesn't end with *, the string must be fully consumed
+	if !endsWithWildcard && idx != len(str) {
+		return false
+	}
+
+	return true
 }
 
 // ExportToWriter exports current metrics to an io.Writer (useful for testing)
