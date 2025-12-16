@@ -86,7 +86,7 @@ func TestSystemHandler(t *testing.T) {
 			handler := diagnostic.NewDiagnosticHandler(&log, 0, &SystemCollectorMock{
 				systemInfo: tCase.systemInfo,
 				err:        tCase.err,
-			}, uuid.New(), uuid.New(), nil, map[string]string{}, nil)
+			}, uuid.New(), uuid.New(), nil, map[string]string{}, nil, nil)
 			recorder := httptest.NewRecorder()
 			ctx := context.Background()
 			request, err := http.NewRequestWithContext(ctx, http.MethodGet, "/diag/system", nil)
@@ -150,6 +150,7 @@ func TestTunnelStateHandler(t *testing.T) {
 				tracker,
 				map[string]string{},
 				tCase.icmpSources,
+				nil,
 			)
 			recorder := httptest.NewRecorder()
 			handler.TunnelStateHandler(recorder, nil)
@@ -207,7 +208,7 @@ func TestConfigurationHandler(t *testing.T) {
 
 			var response map[string]string
 
-			handler := diagnostic.NewDiagnosticHandler(&log, 0, nil, uuid.New(), uuid.New(), nil, tCase.flags, nil)
+			handler := diagnostic.NewDiagnosticHandler(&log, 0, nil, uuid.New(), uuid.New(), nil, tCase.flags, nil, nil)
 			recorder := httptest.NewRecorder()
 			handler.ConfigurationHandler(recorder, nil)
 			decoder := json.NewDecoder(recorder.Body)

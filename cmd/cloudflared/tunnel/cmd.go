@@ -516,6 +516,18 @@ func StartServer(
 
 		readinessServer := metrics.NewReadyServer(connectorID, tracker)
 		cliFlags := nonSecretCliFlags(log, c, nonSecretFlagsList)
+
+		// Prepare metrics export configuration for diagnostics
+		var metricsExportConfig *diagnostic.MetricsExportConfig
+		if metricsFile := c.String(cfdflags.MetricsFile); metricsFile != "" {
+			metricsExportConfig = &diagnostic.MetricsExportConfig{
+				Enabled:        true,
+				FilePath:       metricsFile,
+				Interval:       c.Duration(cfdflags.MetricsInterval).String(),
+				Compress:       c.Bool(cfdflags.MetricsCompress),
+				FilterPatterns: parseMetricsFilterPatterns(c.String(cfdflags.MetricsFilter)),
+			}
+		}
 		diagnosticHandler := diagnostic.NewDiagnosticHandler(
 			log,
 			0,
@@ -525,6 +537,7 @@ func StartServer(
 			tracker,
 			cliFlags,
 			sources,
+			metricsExportConfig,
 		)
 		metricsConfig := metrics.Config{
 			ReadyServer:         readinessServer,
@@ -539,17 +552,7 @@ func StartServer(
 	if metricsFile := c.String(cfdflags.MetricsFile); metricsFile != "" {
 		metricsInterval := c.Duration(cfdflags.MetricsInterval)
 		metricsCompress := c.Bool(cfdflags.MetricsCompress)
-
-		// Parse filter patterns from comma-separated string
-		var filterPatterns []string
-		if filterStr := c.String(cfdflags.MetricsFilter); filterStr != "" {
-			for _, pattern := range strings.Split(filterStr, ",") {
-				pattern = strings.TrimSpace(pattern)
-				if pattern != "" {
-					filterPatterns = append(filterPatterns, pattern)
-				}
-			}
-		}
+		filterPatterns := parseMetricsFilterPatterns(c.String(cfdflags.MetricsFilter))
 
 		wg.Add(1)
 		go func() {
@@ -1370,4 +1373,20 @@ func isFlagIncluded(flagInclusionList []string, flag string) bool {
 	}
 
 	return false
+}
+
+// parseMetricsFilterPatterns parses a comma-separated string of metric filter patterns
+func parseMetricsFilterPatterns(filterStr string) []string {
+	if filterStr == "" {
+		return nil
+	}
+
+	var patterns []string
+	for _, pattern := range strings.Split(filterStr, ",") {
+		pattern = strings.TrimSpace(pattern)
+		if pattern != "" {
+			patterns = append(patterns, pattern)
+		}
+	}
+	return patterns
 }

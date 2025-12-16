@@ -25,6 +25,7 @@ const (
 	// Base for filenames of the diagnostic procedure
 	systemInformationBaseName = "systeminformation.json"
 	metricsBaseName           = "metrics.txt"
+	metricsExportBaseName     = "metrics-export.jsonl"
 	zipName                   = "cloudflared-diag"
 	heapPprofBaseName         = "heap.pprof"
 	goroutinePprofBaseName    = "goroutine.pprof"

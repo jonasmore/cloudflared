@@ -27,6 +27,7 @@ const (
 	goroutineJobName             = "goroutine profile"
 	heapJobName                  = "heap profile"
 	metricsJobName               = "metrics"
+	metricsExportJobName         = "metrics export file"
 	logInformationJobName        = "log information"
 	rawNetworkInformationJobName = "raw network information"
 	networkInformationJobName    = "network information"
@@ -332,6 +333,44 @@ func tunnelStateCollectEndpointAdapter(client HTTPClient, tunnel *TunnelState, f
 	return collectFromEndpointAdapter(endpointFunc, fileName)
 }
 
+func collectMetricsExportFile(tunnel *TunnelState) collectFunc {
+	return func(ctx context.Context) (string, error) {
+		// Check if metrics export is enabled and has a file path
+		if tunnel == nil || tunnel.MetricsExport == nil || !tunnel.MetricsExport.Enabled || tunnel.MetricsExport.FilePath == "" {
+			return "", fmt.Errorf("metrics export is not enabled or file path is not configured")
+		}
+
+		sourceFile := tunnel.MetricsExport.FilePath
+
+		// Check if source file exists
+		if _, err := os.Stat(sourceFile); os.IsNotExist(err) {
+			return "", fmt.Errorf("metrics export file does not exist: %s", sourceFile)
+		}
+
+		// Open source file
+		srcFile, err := os.Open(sourceFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to open metrics export file: %w", err)
+		}
+		defer srcFile.Close()
+
+		// Create destination file in temp directory
+		dstFile, err := os.Create(filepath.Join(os.TempDir(), metricsExportBaseName))
+		if err != nil {
+			return "", ErrCreatingTemporaryFile
+		}
+		defer dstFile.Close()
+
+		// Copy the file
+		_, err = io.Copy(dstFile, srcFile)
+		if err != nil {
+			return dstFile.Name(), fmt.Errorf("failed to copy metrics export file: %w", err)
+		}
+
+		return dstFile.Name(), nil
+	}
+}
+
 // resolveInstanceBaseURL is responsible to
 // resolve the base URL of the instance that should be diagnosed.
 // To resolve the instance it may be necessary to query the
@@ -402,6 +441,11 @@ func createJobs(
 			jobName: metricsJobName,
 			fn:      collectFromEndpointAdapter(client.GetMetrics, metricsBaseName),
 			bypass:  noDiagMetrics,
+		},
+		{
+			jobName: metricsExportJobName,
+			fn:      collectMetricsExportFile(tunnel),
+			bypass:  tunnel == nil || tunnel.MetricsExport == nil || !tunnel.MetricsExport.Enabled,
 		},
 		{
 			jobName: logInformationJobName,

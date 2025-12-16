@@ -23,6 +23,7 @@ type Handler struct {
 	tracker         *tunnelstate.ConnTracker
 	cliFlags        map[string]string
 	icmpSources     []string
+	metricsExport   *MetricsExportConfig
 }
 
 func NewDiagnosticHandler(
@@ -34,6 +35,7 @@ func NewDiagnosticHandler(
 	tracker *tunnelstate.ConnTracker,
 	cliFlags map[string]string,
 	icmpSources []string,
+	metricsExport *MetricsExportConfig,
 ) *Handler {
 	logger := log.With().Logger()
 	if timeout == 0 {
@@ -50,6 +52,7 @@ func NewDiagnosticHandler(
 		tracker:         tracker,
 		cliFlags:        cliFlags,
 		icmpSources:     icmpSources,
+		metricsExport:   metricsExport,
 	}
 }
 
@@ -89,11 +92,20 @@ func (handler *Handler) SystemHandler(writer http.ResponseWriter, request *http.
 	}
 }
 
+type MetricsExportConfig struct {
+	Enabled        bool     `json:"enabled"`
+	FilePath       string   `json:"file_path,omitempty"`
+	Interval       string   `json:"interval,omitempty"`
+	Compress       bool     `json:"compress,omitempty"`
+	FilterPatterns []string `json:"filter_patterns,omitempty"`
+}
+
 type TunnelState struct {
-	TunnelID    uuid.UUID                           `json:"tunnelID,omitempty"`
-	ConnectorID uuid.UUID                           `json:"connectorID,omitempty"`
-	Connections []tunnelstate.IndexedConnectionInfo `json:"connections,omitempty"`
-	ICMPSources []string                            `json:"icmp_sources,omitempty"`
+	TunnelID      uuid.UUID                           `json:"tunnelID,omitempty"`
+	ConnectorID   uuid.UUID                           `json:"connectorID,omitempty"`
+	Connections   []tunnelstate.IndexedConnectionInfo `json:"connections,omitempty"`
+	ICMPSources   []string                            `json:"icmp_sources,omitempty"`
+	MetricsExport *MetricsExportConfig                `json:"metrics_export,omitempty"`
 }
 
 func (handler *Handler) TunnelStateHandler(writer http.ResponseWriter, _ *http.Request) {
@@ -107,6 +119,7 @@ func (handler *Handler) TunnelStateHandler(writer http.ResponseWriter, _ *http.R
 		handler.connectorID,
 		handler.tracker.GetActiveConnections(),
 		handler.icmpSources,
+		handler.metricsExport,
 	}
 	encoder := json.NewEncoder(writer)
 
